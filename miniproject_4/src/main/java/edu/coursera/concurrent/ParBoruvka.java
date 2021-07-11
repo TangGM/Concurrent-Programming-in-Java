@@ -27,7 +27,7 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
         ParComponent loopNode;
 
         while ((loopNode = nodesLoaded.poll()) != null) {
-            if (!loopNode.lock.tryLock() || loopNode.isDead) {
+            if (loopNode.isDead || !loopNode.lock.tryLock()) {
                 continue;
             }
 
