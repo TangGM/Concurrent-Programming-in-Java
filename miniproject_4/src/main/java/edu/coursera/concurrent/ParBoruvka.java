@@ -23,38 +23,32 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
      */
     @Override
     public void computeBoruvka(final Queue<ParComponent> nodesLoaded, final SolutionToBoruvka<ParComponent> solution) {
+
         ParComponent loopNode;
 
         while ((loopNode = nodesLoaded.poll()) != null) {
-            if (!loopNode.lock.tryLock()) {
-                continue;
-            }
-            if (loopNode.isDead) {
-                loopNode.lock.unlock();
+            if (!loopNode.lock.tryLock() || loopNode.isDead) {
                 continue;
             }
 
-            final Edge<ParComponent> e = loopNode.getMinEdge();
+            Edge<ParComponent> e = loopNode.getMinEdge();
             if (e == null) {
+                loopNode.lock.unlock();
                 break;
             }
-            final ParComponent other = e.getOther(loopNode);
-            if (!other.lock.tryLock()) {
-                loopNode.lock.unlock();
-                nodesLoaded.add(loopNode); // add it back
-                continue;
-            }
-            if (other.isDead) {
-                other.lock.unlock();
+
+            ParComponent other = e.getOther(loopNode);
+            if (!other.lock.tryLock() || other.isDead) {
                 loopNode.lock.unlock();
                 nodesLoaded.add(loopNode);
                 continue;
             }
+
             other.isDead = true;
             loopNode.merge(other, e.weight());
             loopNode.lock.unlock();
             other.lock.unlock();
-            nodesLoaded.add(loopNode); // add the new node
+            nodesLoaded.add(loopNode);
         }
         solution.setSolution(loopNode);
     }
@@ -66,7 +60,8 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
      */
     public static final class ParComponent extends Component<ParComponent> {
 
-        public final ReentrantLock lock;
+        public final ReentrantLock lock = new ReentrantLock();
+
         /**
          *  A unique identifier for this component in the graph that contains
          *  it.
@@ -98,12 +93,13 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
         public boolean isDead = false;
 
         /**
+         * Constructor.
+         *
          * @param setNodeId ID for this node.
          */
         public ParComponent(final int setNodeId) {
             super();
             this.nodeId = setNodeId;
-             lock = new ReentrantLock();
         }
 
         /**
@@ -176,30 +172,24 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
                 // Get rid of inter-component edges
                 while (i < edges.size()) {
                     final Edge<ParComponent> e = edges.get(i);
-                    if ((e.fromComponent() != this
-                                && e.fromComponent() != other)
-                            || (e.toComponent() != this
-                                && e.toComponent() != other)) {
+                    if ((e.fromComponent() != this && e.fromComponent() != other)
+                            || (e.toComponent() != this && e.toComponent() != other)) {
                         break;
                     }
                     i++;
                 }
                 while (j < other.edges.size()) {
                     final Edge<ParComponent> e = other.edges.get(j);
-                    if ((e.fromComponent() != this
-                                && e.fromComponent() != other)
-                            || (e.toComponent() != this
-                                && e.toComponent() != other)) {
+                    if ((e.fromComponent() != this && e.fromComponent() != other)
+                            || (e.toComponent() != this && e.toComponent() != other)) {
                         break;
                     }
                     j++;
                 }
 
                 if (j < other.edges.size() && (i >= edges.size()
-                            || edges.get(i).weight()
-                            > other.edges.get(j).weight())) {
-                    newEdges.add(other.edges.get(j++).replaceComponent(other,
-                                this));
+                        || edges.get(i).weight() > other.edges.get(j).weight())) {
+                    newEdges.add(other.edges.get(j++).replaceComponent(other, this));
                 } else if (i < edges.size()) {
                     newEdges.add(edges.get(i++).replaceComponent(other, this));
                 }
@@ -245,10 +235,9 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
      * A ParEdge represents a weighted edge between two ParComponents.
      */
     public static final class ParEdge extends Edge<ParComponent> implements Comparable<Edge> {
+
         protected ParComponent fromComponent;
-
         protected ParComponent toComponent;
-
         public double weight;
 
         /**
@@ -296,14 +285,12 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
                 assert (toComponent != from);
                 return toComponent;
             }
-
             if (toComponent == from) {
                 assert (fromComponent != from);
                 return fromComponent;
             }
             assert (false);
             return null;
-
         }
 
         /**
@@ -311,13 +298,7 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
          */
         @Override
         public int compareTo(final Edge e) {
-            if (e.weight() == weight) {
-                return 0;
-            } else if (weight < e.weight()) {
-                return -1;
-            } else {
-                return 1;
-            }
+            return Double.compare(weight, e.weight());
         }
 
         /**
